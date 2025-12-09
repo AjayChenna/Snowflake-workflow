@@ -1,0 +1,47 @@
+
+name: Snowflake Multi-Environment Deployment
+
+on:
+  push:
+    branches:
+      - main        # Trigger on main for PROD
+      - develop     # Trigger on develop for DEV
+      - release/*   # Trigger on release branches for QA
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        environment: [DEV, QA, PROD]
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+
+      - name: Install SnowSQL
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y snowsql
+
+      - name: Deploy to Snowflake
+        if: github.ref == 'refs/heads/develop' && matrix.environment == 'DEV' ||
+            startsWith(github.ref, 'refs/heads/release/') && matrix.environment == 'QA' ||
+            github.ref == 'refs/heads/main' && matrix.environment == 'PROD'
+        environment: ${{ matrix.environment }}
+        env:
+          SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
+          SNOWFLAKE_USER: ${{ secrets.SNOW_USER }}
+          SNOWFLAKE_PASSWORD: ${{ secrets.SF_PASSWORD }}
+          SNOWFLAKE_ROLE: ${{ secrets.SF_ROLE }}
+          SNOWFLAKE_WAREHOUSE: ${{ secrets.SF_WAREHOUSE }}
+          SNOWFLAKE_DATABASE: ${{ secrets.SF_DATABASE }}
+        run: |
+          echo "Deploying to ${{ matrix.environment }}..."
+          for file in sql/*.sql; do
+            echo "Executing $file..."
+            snowsql -a $SNOWFLAKE_ACCOUNT -u $SNOWFLAKE_USER -p $SNOWFLAKE_PASSWORD \
+            -r $SNOWFLAKE_ROLE -w $SNOWFLAKE_WAREHOUSE -d $SNOWFLAKE_DATABASE \
+            -q "$(cat $file)"
+          done
